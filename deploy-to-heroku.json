@@ -1,0 +1,23 @@
+{
+  "name": "CLARIFY AI - Deepfake Detection",
+  "description": "AI-powered deepfake detection system using XceptionNet",
+  "repository": "https://github.com/suyash23ag/clarify-",
+  "logo": "https://avatars.githubusercontent.com/u/25484553",
+  "keywords": ["django", "react", "deepfake", "ai", "machine-learning"],
+  "stack": "heroku-22",
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "env": {
+    "SECRET_KEY": {
+      "description": "Django secret key",
+      "generator": "secret"
+    },
+    "DEBUG": {
+      "description": "Debug mode",
+      "value": "False"
+    }
+  }
+}
