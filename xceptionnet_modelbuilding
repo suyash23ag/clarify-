@@ -1,0 +1,94 @@
+import numpy as np
+import cv2
+import os
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.applications import Xception
+
+frame_height, frame_width = 160, 160  
+sequence_length = 10  
+num_classes = 2  
+
+def load_xception_model():
+    base_model = Xception(include_top=False, input_shape=(frame_height, frame_width, 3), pooling='avg')
+    return base_model
+
+def load_single_video(video_file, xception_model):
+    cap = cv2.VideoCapture(video_file)
+    embeddings = []
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.resize(frame, (frame_height, frame_width))
+        frame = frame / 255.0  
+        embedding = xception_model.predict(np.expand_dims(frame, axis=0))
+        embeddings.append(embedding.flatten())
+    
+    cap.release()
+    
+    if len(embeddings) > 0:
+        while len(embeddings) < sequence_length:
+            embeddings.append(embeddings[-1])
+        return np.array(embeddings)
+    else:
+        return None
+
+def create_model():
+    model = Sequential()
+    model.add(LSTM(128, return_sequences=False, input_shape=(sequence_length, 2048)))
+    model.add(Dropout(0.5))
+    model.add(Dense(64, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(num_classes, activation='softmax'))
+    model.compile(optimizer=Adam(), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+def load_dataset(dataset_path):
+    video_files = []
+    labels = []
+    label_map = {}
+    current_label = 0
+    
+    for label in os.listdir(dataset_path):
+        class_path = os.path.join(dataset_path, label)
+        if os.path.isdir(class_path):
+            if label not in label_map:
+                label_map[label] = current_label
+                current_label += 1
+            
+            for video_file in os.listdir(class_path):
+                if video_file.endswith(('.mp4', '.avi', '.mov', '.mkv')):
+                    video_files.append(os.path.join(class_path, video_file))
+                    labels.append(label_map[label])  # Use mapped integer label
+
+    return video_files, labels
+
+def train_model(dataset_path):
+    xception_model = load_xception_model()
+    video_files, labels = load_dataset(dataset_path)
+    all_embeddings = []
+    
+    for video_file in video_files:
+        frames = load_single_video(video_file, xception_model)
+        if frames is not None:
+            all_embeddings.append(frames)
+        else:
+            print(f"No frames extracted from {video_file}.")
+    
+    X_train = np.array(all_embeddings)
+    y_train = np.array(labels)
+
+    X_train = X_train.reshape(X_train.shape[0], sequence_length, 2048)
+
+    model = create_model()
+    model.fit(X_train, y_train, batch_size=32, epochs=10)
+
+    model.save('shake.h5')  # Save the model to .h5 file
+    return model
+
+dataset_path = '/kaggle/input/deep-fake-detection-dfd-entire-original-dataset'  
+trained_model = train_model(dataset_path)

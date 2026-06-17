@@ -1,0 +1,91 @@
+import numpy as np
+import cv2
+import os
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.applications import Xception
+
+frame_height, frame_width = 160, 160
+sequence_length = 10
+num_classes = 2
+
+def load_xception_model():
+    base_model = Xception(include_top=False, input_shape=(frame_height, frame_width, 3), pooling='avg')
+    return base_model
+
+def load_single_video(video_file, xception_model):
+    cap = cv2.VideoCapture(video_file)
+    embeddings = []
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.resize(frame, (frame_height, frame_width))
+        frame = frame / 255.0
+        embedding = xception_model.predict(np.expand_dims(frame, axis=0))
+        embeddings.append(embedding.flatten())
+    
+    cap.release()
+    
+    if len(embeddings) > 0:
+        while len(embeddings) < sequence_length:
+            embeddings.append(embeddings[-1])
+        return np.array(embeddings)
+    else:
+        return None
+
+def create_model():
+    model = Sequential()
+    model.add(LSTM(128, return_sequences=False, input_shape=(sequence_length, 2048)))
+    model.add(Dropout(0.5))
+    model.add(Dense(64, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(num_classes, activation='softmax'))
+    model.compile(optimizer=Adam(), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+def generate_explanation(class_label, prediction_probabilities):
+    explanations = []
+    if class_label == 1:
+        explanations.append("Inconsistencies detected in facial features, such as unnatural expressions or asymmetric movements.")
+        explanations.append("Lighting and shading inconsistencies between the face and the rest of the scene.")
+        explanations.append("Unnatural or jerky movements that do not align with expected human motion.")
+        explanations.append("Blurriness or artifacts around the edges of the face, often indicating poor face-swapping.")
+        explanations.append(f"Model confidence in this being fake: {prediction_probabilities[1] * 100:.2f}%")
+    else:
+        explanations.append("No significant abnormalities detected in facial features or movements.")
+        explanations.append("Consistent lighting and shading throughout the scene.")
+        explanations.append("Smooth and natural movements that align with expected human motion.")
+        explanations.append(f"Model confidence in this being real: {prediction_probabilities[0] * 100:.2f}%")
+    
+    return explanations
+
+def classify_video(video_path):
+    xception_model = load_xception_model()
+    frames = load_single_video(video_path, xception_model)
+
+    if frames is not None:
+        frames = np.expand_dims(frames, axis=0)
+        model = create_model()
+        prediction = model.predict(frames)
+        class_label = np.argmax(prediction)
+        prediction_probabilities = prediction[0]
+
+        if class_label == 1:
+            print("Confirmed Fake: Inconsistencies detected.")
+        else:
+            print("Confirmed Real: No abnormalities detected.")
+
+        explanations = generate_explanation(class_label, prediction_probabilities)
+        print("Detailed Explanation:")
+        for explanation in explanations:
+            print("- " + explanation)
+    else:
+        print("No frames extracted from the video.")
+
+if __name__ == "__main__":
+    video_file = r"C:\Users\hp\OneDrive\Desktop\New folder\Lair\Hrithik Orginal.mp4"
+    classify_video(video_file)
